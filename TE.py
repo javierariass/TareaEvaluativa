@@ -1,12 +1,25 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider, Button
 import tkinter as tk
 from tkinter import messagebox
-from PIL import Image, ImageTk, ImageFilter  # Biblioteca para manejar imágenes y aplicar filtros
+from PIL import Image, ImageTk, ImageFilter
+from matplotlib.animation import FuncAnimation
 
-# Función principal para ejecutar los cálculos y generar la gráfica
+# Variables globales
+current_figure = None
+ani = None  # Para mantener activa la animación
+
 def ejecutar():
+    global current_figure, ani
+
     try:
+        # Cerrar la figura anterior si existe
+        if current_figure:
+            plt.close(current_figure)
+            current_figure = None
+            ani = None
+
         # Obtener valores de las entradas
         funcion_input = function.get()
         start = int(I1.get())
@@ -21,55 +34,110 @@ def ejecutar():
         def dynamic_function(x):
             return eval(funcion_input)
 
-        # Puntos de partición
-        x_partitions = np.linspace(start, end, num_partitions + 1)
-        dx = (end - start) / num_partitions
-
-        # Cálculo de las sumas inferior y superior
-        lower_sum = np.sum(np.minimum(dynamic_function(x_partitions[:-1]), dynamic_function(x_partitions[1:])) * dx)
-        upper_sum = np.sum(np.maximum(dynamic_function(x_partitions[:-1]), dynamic_function(x_partitions[1:])) * dx)
-        integral_approximation = (lower_sum + upper_sum) / 2  # Promedio de las sumas
-
-        # Gráfica de la función
+        # Gráfica inicial
         x_dense = np.linspace(start, end, 1000)
         y_dense = dynamic_function(x_dense)
 
-        plt.figure(num="Tarea Extraclase", figsize=(10, 6))
-        plt.plot(x_dense, y_dense, label="Función $f(x)$", color="blue")
-        plt.scatter(x_partitions, dynamic_function(x_partitions), color="red", label="Puntos de partición")
+        # Crear una nueva figura y almacenarla en la variable global
+        current_figure, ax = plt.subplots(figsize=(10, 6))
+        plt.subplots_adjust(bottom=0.3)  # Ajustar espacio inferior para el slider y botones
 
-        # Dibujar líneas rojas en discontinuidades
-        for i in range(1, len(x_dense)):
-            if np.abs(y_dense[i] - y_dense[i - 1]) > 1e6:  # Umbral para detectar discontinuidades
-                plt.axvline(x=x_dense[i], color="red", linestyle="--", linewidth=2, label="Discontinuidad" if i == 1 else "")
+        ax.plot(x_dense, y_dense, label="Función $f(x)$: " + funcion_input, color="blue")  # Mostrar función en leyenda
+        ax.axhline(0, color="black", linewidth=0.8)
+        ax.set_title("Demostración Visual del Teorema de Integrabilidad de Riemann")
+        ax.set_xlabel("$x$")
+        ax.set_ylabel("$f(x)$")
+        ax.grid(alpha=0.5)
+        
+        # Crear slider
+        slider_ax = plt.axes([0.25, 0.1, 0.5, 0.03])  # Posición [x, y, ancho, alto]
+        partition_slider = Slider(slider_ax, 'Particiones', 1, num_partitions, valinit=1, valstep=1)
 
-        # Rectángulos para las sumas inferior y superior
-        for i in range(num_partitions):
-            plt.fill_between(
-                [x_partitions[i], x_partitions[i + 1]],
-                0, np.minimum(dynamic_function(x_partitions[i]), dynamic_function(x_partitions[i + 1])),
-                color="green", alpha=0.4, label="Suma inferior" if i == 0 else ""
-            )
-            plt.fill_between(
-                [x_partitions[i], x_partitions[i + 1]],
-                np.minimum(dynamic_function(x_partitions[i]), dynamic_function(x_partitions[i + 1])),
-                np.maximum(dynamic_function(x_partitions[i]), dynamic_function(x_partitions[i + 1])),
-                color="orange", alpha=0.4, label="Suma superior" if i == 0 else ""
-            )
+        # Función para actualizar la gráfica
+        def update(partitions):
+            # Limpiar colecciones previas (rectángulos)
+            while len(ax.collections) > 0:
+                ax.collections[0].remove()
 
-        # Ajustes de la gráfica
-        plt.title("Demostración Visual del Teorema de Integrabilidad de Riemann")
-        plt.xlabel("$x$")
-        plt.ylabel("$f(x)$")
-        plt.axhline(0, color="black", linewidth=0.8)
-        plt.legend()
-        plt.grid(alpha=0.5)
+            # Limpiar textos previos
+            while len(ax.texts) > 0:
+                ax.texts[0].remove()
 
-        # Mostrar valores de las sumas y la integral aproximada en la gráfica
-        plt.text(0.05, 0.85, f"Suma inferior: {lower_sum:.4f}\nSuma superior: {upper_sum:.4f}\nIntegral aproximada: {integral_approximation:.4f}",
-                 transform=plt.gca().transAxes, fontsize=10, bbox=dict(facecolor="white", alpha=0.7))
-        plt.text(0.97, 0.03, f"Función: {funcion_input}", transform=plt.gca().transAxes,
-                 fontsize=10, color="black", ha="right", bbox=dict(facecolor="white", alpha=0.8))
+            x_partitions = np.linspace(start, end, int(partitions) + 1)
+            dx = (end - start) / int(partitions)
+
+            # Cálculo de las sumas inferior y superior
+            y_values_start = dynamic_function(x_partitions[:-1])
+            y_values_end = dynamic_function(x_partitions[1:])
+            lower_sum = np.sum(np.minimum(y_values_start, y_values_end) * dx)
+            upper_sum = np.sum(np.maximum(y_values_start, y_values_end) * dx)
+            integral_approximation = (lower_sum + upper_sum) / 2  # Promedio de las sumas
+
+            # Dibujar rectángulos
+            for i in range(int(partitions)):
+                ax.fill_between(
+                    [x_partitions[i], x_partitions[i + 1]],
+                    0, dynamic_function(x_partitions[i]),
+                    color="green", alpha=0.4, label="Suma inferior" if i == 0 else ""
+                )
+                ax.fill_between(
+                    [x_partitions[i], x_partitions[i + 1]],
+                    dynamic_function(x_partitions[i]),
+                    dynamic_function(x_partitions[i + 1]),
+                    color="orange", alpha=0.4, label="Suma superior" if i == 0 else ""
+                )
+
+            # Actualizar texto dinámico
+            ax.text(0.05, 0.85, f"Suma inferior: {lower_sum:.4f}\nSuma superior: {upper_sum:.4f}\nIntegral aproximada: {integral_approximation:.4f}",
+                    transform=ax.transAxes, fontsize=10, bbox=dict(facecolor="white", alpha=0.7))
+            ax.text(0.97, 0.03, f"Particiones: {int(partitions)}", transform=ax.transAxes,
+                    fontsize=10, color="black", ha="right", bbox=dict(facecolor="white", alpha=0.8))
+
+            handles, labels = ax.get_legend_handles_labels()
+            unique = [(h, l) for i, (h, l) in enumerate(zip(handles, labels)) if l not in labels[:i]]
+            ax.legend(*zip(*unique), loc="upper right") 
+
+
+            # Redibujar la gráfica
+            current_figure.canvas.draw_idle()
+
+        # Vincular el slider con la función de actualización
+        partition_slider.on_changed(update)
+
+        # Botón de animación automática en la figura
+        def start_animation(event):
+            global ani
+
+            def auto_update(i):
+                partition_slider.set_val(i + 1)
+
+            # Crear la animación automática
+            ani = FuncAnimation(current_figure, auto_update, frames=range(0, num_partitions), interval=500, repeat=True)
+            plt.draw()
+
+        def stop_animation(event):
+            global ani
+            if ani:
+                ani.event_source.stop()  # Detener la animación
+
+        # Botón para iniciar animación automática
+        auto_button_ax = plt.axes([0.15, 0.01, 0.2, 0.05])  # Posición para el botón
+        auto_button = Button(auto_button_ax, 'Automático')
+        auto_button.on_clicked(start_animation)
+
+        # Botón para detener animación automática
+        stop_button_ax = plt.axes([0.65, 0.01, 0.2, 0.05])  # Posición para el botón
+        stop_button = Button(stop_button_ax, 'Detener')
+        stop_button.on_clicked(stop_animation)
+
+        # Mostrar la función analizada debajo de la gráfica
+        ax.text(0.5, -0.15, f"Función analizada: {funcion_input}", transform=ax.transAxes,
+                fontsize=12, color="blue", ha="center")
+
+        # Asegurar que la leyenda muestra ambos colores una vez
+        handles, labels = ax.get_legend_handles_labels()
+        unique = [(h, l) for i, (h, l) in enumerate(zip(handles, labels)) if l not in labels[:i]]
+        ax.legend(*zip(*unique))
 
         plt.show()
 
@@ -79,12 +147,12 @@ def ejecutar():
 # Crear la ventana principal
 window = tk.Tk()
 window.title("Tarea Extraclase")
-window.geometry("600x600")
+window.geometry("600x700")
 
 # Cambiar el fondo de la ventana usando Pillow con desenfoque
 try:
     background_image_pil = Image.open("img.png")  # Cargar la imagen
-    blurred_image = background_image_pil.filter(ImageFilter.GaussianBlur(2))  # Aplicar desenfoque (ajusta el valor de 5)
+    blurred_image = background_image_pil.filter(ImageFilter.GaussianBlur(2))  # Aplicar desenfoque
     background_image_tk = ImageTk.PhotoImage(blurred_image)  # Convertir a formato compatible con tkinter
     background_label = tk.Label(window, image=background_image_tk)
     background_label.place(relwidth=1, relheight=1)
@@ -110,13 +178,13 @@ tk.Label(window, text="Función:").pack(pady=5)
 function = tk.Entry(window, font=("Arial", 12), width=30)
 function.pack()
 
-tk.Label(window, text="Intervalo").place(x = 267,y = 280)
+tk.Label(window, text="Intervalo").place(x=267, y=280)
 
-tk.Label(window, text="Minimo").place(x=220, y=310)
+tk.Label(window, text="Mínimo").place(x=220, y=310)
 I1 = tk.Entry(window, font=("Arial", 12), width=5)
 I1.place(x=220, y=340)
 
-tk.Label(window, text="Maximo:").place(x=320, y=310)
+tk.Label(window, text="Máximo:").place(x=320, y=310)
 I2 = tk.Entry(window, font=("Arial", 12), width=5)
 I2.place(x=320, y=340)
 
@@ -126,7 +194,7 @@ partition.place(x=155, y=430)
 
 # Botón para ejecutar
 execute_button = tk.Button(window, text="Ejecutar", command=ejecutar)
-execute_button.place(x=265, y=470)
+execute_button.place(x=265, y=500)
 
 # Iniciar el bucle principal
 window.mainloop()
